@@ -18,6 +18,8 @@
 
 </p>
 
+## PyCon Italy 2023
+[![Saving time, money and sanity by Pythonizing Google Slides](https://img.youtube.com/vi/uCkyusWpMbs/0.jpg)](https://www.youtube.com/watch?v=uCkyusWpMbs)
 
 ## Install
 
