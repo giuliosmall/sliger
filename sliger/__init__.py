@@ -1,3 +1,11 @@
+"""Sliger: Slide of the tiger - Pythonize Google Slides."""
+
+# This file can be used to define the public API of the sliger package.
+# For now, as it's primarily a CLI tool, we keep it minimal.
+# The CLI application is defined in sliger.cli
+
+__version__ = "0.1.0" # Example version
+
 import ast
 import importlib
 import re
@@ -56,6 +64,25 @@ def load_jinja_environment(config_path: str) -> Environment:
     return env
 
 
+def _get_slides_service():
+    """Builds and returns the Google Slides API service."""
+    return build("slides", "v1", credentials=state["creds"])
+
+
+def _get_presentation_slides(service, presentation_id: str) -> Optional[list]:
+    """Fetches and returns the slides of a presentation."""
+    try:
+        presentation = service.presentations().get(presentationId=presentation_id).execute()
+        slides = presentation.get("slides")
+        # The verbose printing will be handled by the calling functions
+        # if state["verbose"]:
+        #     print(f"The presentation contains {len(slides)} slides:")
+        return slides
+    except HttpError as err:
+        print(err, file=sys.stderr)
+        return None
+
+
 @app.command()
 def duplicate_presentation(copy_title: str = typer.Option(...)):
     presentation_id = state["presentation_id"]
@@ -67,33 +94,19 @@ def duplicate_presentation(copy_title: str = typer.Option(...)):
         )
         presentation_copy_id = drive_response.get("id")
 
-        ids = []
-        file_id = presentation_copy_id
-
-        def callback(request_id, response, exception):
-            if exception:
-                # Handle error
-                print(exception, file=sys.stderr)
-            else:
-                if state["verbose"]:
-                    print(f"Request_Id: {request_id}")
-                    print(f'Permission Id: {response.get("id")}')
-                ids.append(response.get("id"))
-
-        # pylint: disable=maybe-no-member
-        batch = drive_service.new_batch_http_request(callback=callback)
+        # Simpler permission setting
         user_permission = {
             "type": "anyone",
             "role": "writer",
         }
-        batch.add(
-            drive_service.permissions().create(
-                fileId=file_id,
-                body=user_permission,
-                fields="id",
-            )
-        )
-        batch.execute()
+        permission_response = drive_service.permissions().create(
+            fileId=presentation_copy_id,
+            body=user_permission,
+            fields="id",
+        ).execute()
+
+        if state["verbose"]:
+            print(f"Permission Id: {permission_response.get('id')}")
 
         if state["verbose"]:
             print(
@@ -122,39 +135,43 @@ def delete_slide_by_id(service, presentation_id: str, slide_id: str):
     return response
 
 
+def _get_slide_id_by_index(slides: list, index: int) -> Optional[str]:
+    """Returns the objectId of a slide given its 1-based index."""
+    if 0 < index <= len(slides):
+        return slides[index - 1].get("objectId")
+    return None
+
+
+def _print_slide_details_if_verbose(slides: list):
+    """Prints details of each slide if verbose mode is enabled."""
+    if state["verbose"]:
+        print(f"The presentation contains {len(slides)} slides:")
+        for i, slide in enumerate(slides):
+            slide_id = slide.get("objectId")
+            page_elements = slide.get("pageElements", []) # Ensure pageElements exists
+            print(
+                f"- Slide #{i + 1} ({slide_id}) contains {len(page_elements)} elements."
+            )
+
+
 @app.command()
 def delete_slide(id: int = typer.Option(...)):
     slide_to_delete = id
     presentation_id = state["presentation_id"]
     try:
-        service = build("slides", "v1", credentials=state["creds"])
+        service = _get_slides_service()
+        slides = _get_presentation_slides(service, presentation_id)
 
-        # Call the Slides API
-        presentation = (
-            service.presentations().get(presentationId=presentation_id).execute()
-        )
-        slides = presentation.get("slides")
+        if not slides:
+            return
 
-        if state["verbose"]:
-            print("The presentation contains {} slides:".format(len(slides)))
+        _print_slide_details_if_verbose(slides)
 
-        slide_to_delete_id = None
-        for i, slide in enumerate(slides):
-            slide_id = slide.get("objectId")
-            if slide_to_delete == i + 1:
-                slide_to_delete_id = slide_id
+        slide_to_delete_id = _get_slide_id_by_index(slides, slide_to_delete)
 
-            if state["verbose"]:
-                print(
-                    "- Slide #{} ({}) contains {} elements.".format(
-                        i + 1, slide_id, len(slide.get("pageElements"))
-                    )
-                )
-
-        slide_ids = [slide_id for slide_id in slides]
-        if slide_to_delete_id is None and slide_to_delete_id not in slide_ids:
+        if slide_to_delete_id is None:
             print(
-                f"\nSlide number {id} doesn't exist (id: {slide_id})."
+                f"\nSlide number {id} doesn't exist. "
                 f"Please input an existing slide from your presentation.",
                 file=sys.stderr,
             )
@@ -185,35 +202,20 @@ def duplicate_slide(id: int = typer.Option(...)):
     slide_to_duplicate = id
     presentation_id = state["presentation_id"]
     try:
-        service = build("slides", "v1", credentials=state["creds"])
+        service = _get_slides_service()
+        slides = _get_presentation_slides(service, presentation_id)
 
-        # Call the Slides API
-        presentation = (
-            service.presentations().get(presentationId=presentation_id).execute()
-        )
-        slides = presentation.get("slides")
+        if not slides:
+            return
 
-        if state["verbose"]:
-            print("The presentation contains {} slides:".format(len(slides)))
+        _print_slide_details_if_verbose(slides)
 
-        slide_to_duplicate_id = None
-        for i, slide in enumerate(slides):
-            slide_id = slide.get("objectId")
-            if slide_to_duplicate == i + 1:
-                slide_to_duplicate_id = slide_id
+        slide_to_duplicate_id = _get_slide_id_by_index(slides, slide_to_duplicate)
 
+        if slide_to_duplicate_id is None:
             if state["verbose"]:
                 print(
-                    "- Slide #{} ({}) contains {} elements.".format(
-                        i + 1, slide_id, len(slide.get("pageElements"))
-                    )
-                )
-
-        slide_ids = [slide_id for slide_id in slides]
-        if slide_to_duplicate_id is None and slide_to_duplicate_id not in slide_ids:
-            if state["verbose"]:
-                print(
-                    f"\nSlide number {id} doesn't exist (id: {slide_id})."
+                    f"\nSlide number {id} doesn't exist. "
                     f"Please input an existing slide from your presentation.",
                     file=sys.stderr,
                 )
@@ -281,37 +283,32 @@ def text_update_to_gslides_request(change: dict) -> dict:
     }
 
 
+def _get_text_elements_from_slide(slide: dict) -> list:
+    """Extracts text box elements from a slide."""
+    elements = slide.get("pageElements", [])
+    return list(filter(
+        lambda el: el.get("shape")
+        and el["shape"].get("shapeType") == "TEXT_BOX",
+        elements,
+    ))
+
+
 @app.command()
 def jinjify(data: str = typer.Option("{}", callback=ast.literal_eval)):
     presentation_id = state["presentation_id"]
     try:
-        service = build("slides", "v1", credentials=state["creds"])
+        service = _get_slides_service()
+        slides = _get_presentation_slides(service, presentation_id)
 
-        # Call the Slides API
-        presentation = (
-            service.presentations().get(presentationId=presentation_id).execute()
-        )
-        slides = presentation.get("slides")
+        if not slides:
+            return
 
-        if state["verbose"]:
-            print("The presentation contains {} slides:".format(len(slides)))
+        _print_slide_details_if_verbose(slides)
 
         for i, slide in enumerate(slides):
             slide_id = slide.get("objectId")
 
-            if state["verbose"]:
-                print(
-                    "- Slide #{} ({}) contains {} elements.".format(
-                        i + 1, slide_id, len(slide.get("pageElements"))
-                    )
-                )
-
-            elements = slide.get("pageElements")
-            text_elements = filter(
-                lambda el: el.get("shape")
-                and el["shape"].get("shapeType") == "TEXT_BOX",
-                elements,
-            )
+            text_elements = _get_text_elements_from_slide(slide)
 
             texts = [gslides_element_to_text(el, slide_id) for el in text_elements]
             updated_texts = []
@@ -386,23 +383,13 @@ def upload_image(
             .execute()
         )
 
-        image = (
-            drive_service.files()
-            .create(
-                body={"name": img_file, "parents": ["root"]},
-                media_body=media,
-                fields="id",
-            )
-            .execute()
-        )
-
         # Make the image publicly accessible
         permission = {
             "type": "anyone",
             "role": "reader",
         }
         drive_service.permissions().create(
-            fileId=image.get("id"), body=permission
+            fileId=img_file.get("id"), body=permission
         ).execute()
 
         # Get the presentation
@@ -418,7 +405,7 @@ def upload_image(
         requests = [
             {
                 "createImage": {
-                    "url": "https://drive.google.com/uc?id=" + image.get("id"),
+                    "url": "https://drive.google.com/uc?id=" + img_file.get("id"),
                     "elementProperties": {
                         "pageObjectId": page_id,
                         "size": size,
@@ -459,34 +446,19 @@ def delete_element(service, presentation_id: str, object_id: str):
 def imagify():
     presentation_id = state["presentation_id"]
     try:
-        service = build("slides", "v1", credentials=state["creds"])
+        service = _get_slides_service()
         drive_service = build("drive", "v3", credentials=state["creds"])
+        slides = _get_presentation_slides(service, presentation_id)
 
-        # Call the Slides API
-        presentation = (
-            service.presentations().get(presentationId=presentation_id).execute()
-        )
-        slides = presentation.get("slides")
+        if not slides:
+            return
 
-        if state["verbose"]:
-            print("The presentation contains {} slides:".format(len(slides)))
+        _print_slide_details_if_verbose(slides)
 
         for i, slide in enumerate(slides):
             slide_id = slide.get("objectId")
 
-            if state["verbose"]:
-                print(
-                    "- Slide #{} ({}) contains {} elements.".format(
-                        i + 1, slide_id, len(slide.get("pageElements"))
-                    )
-                )
-
-            elements = slide.get("pageElements")
-            text_elements = filter(
-                lambda el: el.get("shape")
-                and el["shape"].get("shapeType") == "TEXT_BOX",
-                elements,
-            )
+            text_elements = _get_text_elements_from_slide(slide)
 
             for text_element in text_elements:
                 text = gslides_element_to_text(text_element, slide_id)
