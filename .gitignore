@@ -34,3 +34,4 @@ htmlcov/
 client_secret*.json
 .env
 .env.*
+.secrets/
