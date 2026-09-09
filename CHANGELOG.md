@@ -13,6 +13,8 @@ This project is licensed under the [Apache License 2.0](LICENSE).
 
 - Pluggable SQL connector registry (`sliger.connectors`) so warehouses share one `sql()` contract
 - BigQuery extra (`sliger[bigquery]`) with `:named` parameters rewritten to `@name`
+- Snowflake extra (`sliger[snowflake]`) with password or programmatic access token
+- Databricks SQL extra (`sliger[databricks]`) using native `:named` parameters
 
 ## [0.2.0] - 2026-09-06
 
