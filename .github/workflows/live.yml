@@ -21,12 +21,13 @@ jobs:
       - name: Install warehouse extras
         run: uv sync --locked --extra bigquery --extra snowflake
       - name: Google credentials
-        if: ${{ secrets.GCP_SA_JSON != '' }}
         env:
           GCP_SA_JSON: ${{ secrets.GCP_SA_JSON }}
         run: |
-          printf '%s' "$GCP_SA_JSON" > "$RUNNER_TEMP/gcp-sa.json"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-sa.json" >> "$GITHUB_ENV"
+          if [ -n "$GCP_SA_JSON" ]; then
+            printf '%s' "$GCP_SA_JSON" > "$RUNNER_TEMP/gcp-sa.json"
+            echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-sa.json" >> "$GITHUB_ENV"
+          fi
       - name: Live BigQuery and Snowflake
         env:
           SLIGER_LIVE: "1"
