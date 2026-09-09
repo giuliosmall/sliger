@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from live_flags import live_flag
 from sliger.connectors import get_connector, parse_connections, reset_registry, run_sql
 from sliger.connectors.base import Connection
 from sliger.connectors.snowflake import SnowflakeConnector, load_snowflake_sdk
@@ -461,8 +462,8 @@ def _live_spec() -> dict[str, str]:
 
 @pytest.fixture
 def sf_live() -> Connection:
-    if os.environ.get("SLIGER_SNOWFLAKE_LIVE") != "1":
-        pytest.skip("set SLIGER_SNOWFLAKE_LIVE=1")
+    if not live_flag("SLIGER_SNOWFLAKE_LIVE"):
+        pytest.skip("set SLIGER_LIVE=1 or SLIGER_SNOWFLAKE_LIVE=1")
     pytest.importorskip("snowflake.connector")
     return parse_connections({"wh": _live_spec()})["wh"]
 

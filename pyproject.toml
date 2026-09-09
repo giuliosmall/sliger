@@ -94,7 +94,7 @@ known-first-party = ["sliger"]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
 markers = [
-    "live: calls real Google APIs (needs SLIGER_LIVE=1 and ADC with Slides/Drive scopes)",
+    "live: calls real Google / warehouse APIs (needs SLIGER_LIVE=1 and credentials)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

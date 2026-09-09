@@ -1,0 +1,44 @@
+# Live BigQuery + Snowflake SQL. Skipped tests stay green if a secret is missing.
+# Enable on every main push with: gh variable set LIVE_WAREHOUSES --body true
+name: Live warehouses
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  warehouses:
+    if: github.event_name == 'workflow_dispatch' || vars.LIVE_WAREHOUSES == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install warehouse extras
+        run: uv sync --locked --extra bigquery --extra snowflake
+      - name: Google credentials
+        if: ${{ secrets.GCP_SA_JSON != '' }}
+        env:
+          GCP_SA_JSON: ${{ secrets.GCP_SA_JSON }}
+        run: |
+          printf '%s' "$GCP_SA_JSON" > "$RUNNER_TEMP/gcp-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-sa.json" >> "$GITHUB_ENV"
+      - name: Live BigQuery and Snowflake
+        env:
+          SLIGER_LIVE: "1"
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_QUOTA_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          SLIGER_BQ_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_TOKEN: ${{ secrets.SNOWFLAKE_TOKEN }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+        run: uv run pytest tests/test_bigquery.py tests/test_snowflake.py -m live --tb=short

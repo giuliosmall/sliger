@@ -295,6 +295,20 @@ export GOOGLE_CLOUD_QUOTA_PROJECT=nnewtonians-questionario1-prd
 SLIGER_LIVE=1 uv run pytest -m live -s
 ```
 
+`SLIGER_LIVE=1` also runs live **BigQuery** and **Snowflake** SQL tests when those credentials are in the environment. Warehouse-only (no Slides):
+
+```bash
+uv sync --extra bigquery --extra snowflake
+export GOOGLE_CLOUD_PROJECT=infra-foundations
+export GOOGLE_CLOUD_QUOTA_PROJECT=infra-foundations
+export SNOWFLAKE_ACCOUNT=...
+export SNOWFLAKE_USER=...
+export SNOWFLAKE_TOKEN=...   # or SNOWFLAKE_PASSWORD
+SLIGER_LIVE=1 uv run pytest tests/test_bigquery.py tests/test_snowflake.py -m live -s
+```
+
+GitHub Actions workflow `live.yml` does the same on `main` when the repository variable `LIVE_WAREHOUSES=true` and these secrets exist: `GCP_SA_JSON`, `GOOGLE_CLOUD_PROJECT`, `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_TOKEN`.
+
 ## Releasing
 
 1. Register this GitHub repository as a [PyPI Trusted Publisher](https://docs.pypi.org/trusted-publishers/) for project `sliger`, workflow `release.yml`, environment `pypi`.

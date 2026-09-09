@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from live_flags import live_flag
 from sliger.connectors import parse_connections, reset_registry, run_sql
 from sliger.connectors.base import Connection
 from sliger.connectors.bigquery import BigQueryConnector, _bq_value, load_bigquery_sdk
@@ -187,7 +188,7 @@ def test_connector_class_and_sdk_helper_exist() -> None:
     assert callable(load_bigquery_sdk)
 
 
-@pytest.mark.skipif(os.environ.get("SLIGER_BQ_LIVE") != "1", reason="set SLIGER_BQ_LIVE=1")
+@pytest.mark.skipif(not live_flag("SLIGER_BQ_LIVE"), reason="set SLIGER_LIVE=1 or SLIGER_BQ_LIVE=1")
 def test_live_bigquery_select_one() -> None:
     pytest.importorskip("google.cloud.bigquery")
     project = (

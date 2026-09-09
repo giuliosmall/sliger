@@ -7,6 +7,12 @@ import pytest
 from sliger.client import Sliger
 
 
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        if item.name.startswith("test_live_"):
+            item.add_marker(pytest.mark.live)
+
+
 @pytest.fixture
 def text_element_factory():
     def factory(
