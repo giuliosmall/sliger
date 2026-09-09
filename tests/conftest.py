@@ -70,8 +70,8 @@ def sliger_client(monkeypatch, tmp_path: Path) -> Sliger:
     creds_file.write_text("{}")
 
     monkeypatch.setattr(
-        "sliger.client.service_account.Credentials.from_service_account_file",
-        lambda *args, **kwargs: "fake-creds",
+        "sliger.auth.load_credentials",
+        lambda **kwargs: "fake-creds",
     )
     client = Sliger(creds_file, "pres-123")
     client._slides_service = object()

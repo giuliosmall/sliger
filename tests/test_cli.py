@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,10 @@ from typer import BadParameter
 from typer.testing import CliRunner
 
 from sliger.cli import _parse_data, app
+from sliger.client import ImageChange, ImagifyResult, JinjifyResult, RenderResult, TextChange
 from sliger.exceptions import SlideNotFoundError, SligerError
+from sliger.inspect import InspectReport
+from sliger.results import ErrorResult, ScalarResult, TableResult
 
 runner = CliRunner()
 
@@ -36,6 +40,38 @@ def test_help() -> None:
     assert "jinjify" in result.stdout
     assert "imagify" in result.stdout
     assert "duplicate-presentation" in result.stdout
+    assert "render" in result.stdout
+    assert "inspect" in result.stdout
+    assert "repl" in result.stdout
+    assert "--client-secrets" in result.stdout
+    assert "--full-drive" in result.stdout
+
+
+def test_oauth_flags_forwarded(tmp_path: Path, monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_sliger(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return _FakeClient()
+
+    secrets = tmp_path / "client_secret.json"
+    secrets.write_text('{"installed": {"client_id": "x"}}')
+    monkeypatch.setattr("sliger.cli.Sliger", fake_sliger)
+    result = runner.invoke(
+        app,
+        [
+            "--client-secrets",
+            str(secrets),
+            "--presentation-id",
+            "pres-1",
+            "--full-drive",
+            "jinjify",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["kwargs"]["full_drive"] is True
+    assert captured["kwargs"]["client_secrets"] == secrets.resolve()
 
 
 def _invoke(tmp_path: Path, *args: str, monkeypatch, fake) -> object:
@@ -49,8 +85,13 @@ def _invoke(tmp_path: Path, *args: str, monkeypatch, fake) -> object:
 
 
 class _FakeClient:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        eval_result: ScalarResult | TableResult | ErrorResult | None = None,
+    ) -> None:
         self.calls: list[tuple] = []
+        self._eval_result = eval_result
 
     def duplicate_presentation(self, title, *, anyone_can_edit=False, anyone_can_view=False):
         self.calls.append(("dup", title, anyone_can_edit, anyone_can_view))
@@ -62,13 +103,64 @@ class _FakeClient:
     def duplicate_slide(self, number: int) -> None:
         self.calls.append(("dup-slide", number))
 
-    def jinjify(self, data) -> int:
-        self.calls.append(("jinjify", dict(data)))
-        return 4
+    def jinjify(self, data, *, dry_run: bool = False) -> JinjifyResult:
+        self.calls.append(("jinjify", dict(data), dry_run))
+        return JinjifyResult(
+            changes=(
+                TextChange(
+                    slide_number=1,
+                    object_id="shape-1",
+                    original="Hello {{ name }}",
+                    rendered="Hello Ada",
+                ),
+                TextChange(
+                    slide_number=2,
+                    object_id="shape-2",
+                    original="Hi {{ name }}",
+                    rendered="Hi Ada",
+                ),
+            ),
+            dry_run=dry_run,
+        )
 
-    def imagify(self, data) -> int:
-        self.calls.append(("imagify", dict(data)))
-        return 1
+    def imagify(self, data, *, dry_run: bool = False) -> ImagifyResult:
+        self.calls.append(("imagify", dict(data), dry_run))
+        return ImagifyResult(
+            changes=(
+                ImageChange(
+                    slide_number=1,
+                    object_id="img-1",
+                    image_ref="graph.jpg",
+                    resolved="graph.jpg",
+                ),
+            ),
+            dry_run=dry_run,
+        )
+
+    def render(self, copy_title, data, *, dry_run: bool = False, provenance: bool = True):
+        self.calls.append(("render", copy_title, dict(data), dry_run, provenance))
+        return RenderResult(
+            presentation_id="pres-1",
+            jinjify=JinjifyResult(changes=(), dry_run=dry_run),
+            imagify=ImagifyResult(changes=(), dry_run=dry_run),
+            dry_run=dry_run,
+        )
+
+    def inspect(self, data=None) -> InspectReport:
+        self.calls.append(("inspect", dict(data or {})))
+        return InspectReport(
+            formulas=(),
+            functions=(),
+            variables=("name",),
+            smart_quotes=False,
+            missing_data=(),
+        )
+
+    def eval_template(self, template, data=None):
+        self.calls.append(("eval", template, dict(data or {})))
+        if isinstance(self._eval_result, (ErrorResult, ScalarResult, TableResult)):
+            return self._eval_result
+        return ScalarResult("1")
 
 
 def test_subcommand_help_lists_slide_flags(tmp_path: Path, monkeypatch) -> None:
@@ -131,7 +223,42 @@ def test_jinjify_and_imagify_commands(tmp_path: Path, monkeypatch) -> None:
     assert "4" in jinja.stdout
     assert images.exit_code == 0
     assert "1" in images.stdout
-    assert fake.calls == [("jinjify", {"name": "Ada"}), ("imagify", {"account": "1"})]
+    assert fake.calls == [
+        ("jinjify", {"name": "Ada"}, False),
+        ("imagify", {"account": "1"}, False),
+    ]
+
+
+def test_jinjify_and_imagify_dry_run(tmp_path: Path, monkeypatch) -> None:
+    fake = _FakeClient()
+    jinja = _invoke(
+        tmp_path,
+        "jinjify",
+        "--data",
+        '{"name": "Ada"}',
+        "--dry-run",
+        monkeypatch=monkeypatch,
+        fake=fake,
+    )
+    images = _invoke(
+        tmp_path,
+        "imagify",
+        "--dry-run",
+        monkeypatch=monkeypatch,
+        fake=fake,
+    )
+    assert jinja.exit_code == 0
+    assert "Slide 1: Hello {{ name }} → Hello Ada" in jinja.stdout
+    assert "Dry run: 4 text update(s)" in jinja.stdout
+    assert "Applied" not in jinja.stdout
+    assert images.exit_code == 0
+    assert "Slide 1: graph.jpg → graph.jpg" in images.stdout
+    assert "Dry run: 1 image placeholder(s)" in images.stdout
+    assert "Replaced" not in images.stdout
+    assert fake.calls == [
+        ("jinjify", {"name": "Ada"}, True),
+        ("imagify", {}, True),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -187,3 +314,66 @@ def test_jinjify_data_file_must_be_object(tmp_path: Path, monkeypatch) -> None:
         fake=_FakeClient(),
     )
     assert result.exit_code == 1
+
+
+def test_render_dry_run_command(tmp_path: Path, monkeypatch) -> None:
+    fake = _FakeClient()
+    result = _invoke(
+        tmp_path,
+        "render",
+        "--copy-title",
+        "Copy",
+        "--dry-run",
+        monkeypatch=monkeypatch,
+        fake=fake,
+    )
+    assert result.exit_code == 0
+    assert "Dry run render on pres-1" in result.stdout
+    assert "text changes: 0" in result.stdout
+    assert fake.calls == [("render", "Copy", {}, True, True)]
+
+
+def test_inspect_command_prints_json(tmp_path: Path, monkeypatch) -> None:
+    fake = _FakeClient()
+    result = _invoke(tmp_path, "inspect", monkeypatch=monkeypatch, fake=fake)
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["formulas"] == []
+    assert payload["variables"] == ["name"]
+    assert payload["smart_quotes"] is False
+    assert fake.calls == [("inspect", {})]
+
+
+def test_repl_scalar_expression(tmp_path: Path, monkeypatch) -> None:
+    fake = _FakeClient()
+    result = _invoke(tmp_path, "repl", "{{ 1 }}", monkeypatch=monkeypatch, fake=fake)
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "1"
+    assert fake.calls == [("eval", "{{ 1 }}", {})]
+
+
+def test_repl_error_result_exits_1(tmp_path: Path, monkeypatch) -> None:
+    fake = _FakeClient(eval_result=ErrorResult("boom"))
+    result = _invoke(tmp_path, "repl", "{{ 1 }}", monkeypatch=monkeypatch, fake=fake)
+    assert result.exit_code == 1
+    assert "boom" in result.output
+
+
+def test_jinjify_requires_presentation_id(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("SLIGER_PRESENTATION_ID", raising=False)
+    creds = tmp_path / "creds.json"
+    creds.write_text("{}")
+    monkeypatch.setattr("sliger.cli.Sliger", lambda *a, **k: _FakeClient())
+    result = runner.invoke(app, ["--creds-file", str(creds), "jinjify"])
+    assert result.exit_code == 1
+    assert "--presentation-id is required" in result.output
+
+
+def test_render_requires_presentation_id(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("SLIGER_PRESENTATION_ID", raising=False)
+    creds = tmp_path / "creds.json"
+    creds.write_text("{}")
+    monkeypatch.setattr("sliger.cli.Sliger", lambda *a, **k: _FakeClient())
+    result = runner.invoke(app, ["--creds-file", str(creds), "render", "--copy-title", "X"])
+    assert result.exit_code == 1
+    assert "--presentation-id is required" in result.output

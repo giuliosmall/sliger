@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -91,3 +93,21 @@ def upload_image_to_drive(drive_service: Any, image_path: str | Path) -> str:
 
 def drive_image_url(file_id: str) -> str:
     return f"https://drive.google.com/uc?export=view&id={file_id}"
+
+
+def delete_file(drive_service: Any, file_id: str) -> None:
+    _execute(drive_service.files().delete(fileId=file_id), f"delete file {file_id}")
+    logger.debug("Deleted Drive file %s", file_id)
+
+
+@contextmanager
+def temporary_public_image(drive_service: Any, image_path: str | Path) -> Iterator[str]:
+    """Upload, yield the public URL, always delete the Drive file afterwards."""
+    file_id = upload_image_to_drive(drive_service, image_path)
+    try:
+        yield drive_image_url(file_id)
+    finally:
+        try:
+            delete_file(drive_service, file_id)
+        except Exception:
+            logger.warning("Failed to delete temporary Drive file %s", file_id, exc_info=True)
