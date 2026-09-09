@@ -156,12 +156,19 @@ Each value must be a `module.function` dotted path. The directory that contains 
 
 Jinja on a shape is stored in that shape's alt-text (`sliger:…`), so you can **re-jinjify the same deck** when the warehouse moves. Functions may return a string, a table (`list[dict]` / `TableResult`), an image (`ImageResult` / path / bytes), or `sliger_repeat("items")` to duplicate the slide per row.
 
-Built-in `sql()` (sqlite only in core) and named connections:
+Built-in `sql()` and named connections. sqlite ships in core; warehouses are extras (`pip install 'sliger[bigquery]'`). Every connector uses the same `:named` parameters and the same `TableResult` path:
 
 ```toml
 [connections.db]
 type = "sqlite"
 url = "file:./metrics.db"
+
+[connections.warehouse]
+type = "bigquery"
+project = "env:GCP_PROJECT"
+dataset = "metrics"
+# location = "EU"
+# credentials_path = "env:GOOGLE_APPLICATION_CREDENTIALS"
 
 [function_map]
 events_count = "custom_functions.events_count"
@@ -173,7 +180,9 @@ events_count = "custom_functions.events_count"
 {{ item.name }}
 ```
 
-`sql()` and mapped functions pull missing arguments from `--data`. One bad box becomes `[sliger error: …]` and does not abort the rest of the deck.
+`url = "bigquery://PROJECT/DATASET"` works too. `sql()` and mapped functions pull missing arguments from `--data`. One bad box becomes `[sliger error: …]` and does not abort the rest of the deck.
+
+To add a warehouse: implement `sliger.connectors.base.Connector`, list it in `sliger.connectors.registry.BUILTIN`, and (if the SDK is heavy) add a matching `[project.optional-dependencies]` extra. Third-party packages can expose a `sliger.connectors` entry point or call `sliger.connectors.register()`.
 
 ### `render` / `inspect` / `repl`
 

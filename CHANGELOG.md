@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This project is licensed under the [Apache License 2.0](LICENSE).
 
+## [Unreleased]
+
+### Added
+
+- Pluggable SQL connector registry (`sliger.connectors`) so warehouses share one `sql()` contract
+- BigQuery extra (`sliger[bigquery]`) with `:named` parameters rewritten to `@name`
+
 ## [0.2.0] - 2026-09-06
 
 ### Added
