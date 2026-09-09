@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,12 @@ from sliger.inspect import InspectReport
 from sliger.results import ErrorResult, ScalarResult, TableResult
 
 runner = CliRunner()
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _visible(text: str) -> str:
+    """Help text on GitHub Actions is colorized; Typer splits ``--flag`` with ANSI."""
+    return _ANSI.sub("", text)
 
 
 def test_parse_data_json() -> None:
@@ -37,14 +44,15 @@ def test_parse_data_rejects_garbage() -> None:
 def test_help() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "jinjify" in result.stdout
-    assert "imagify" in result.stdout
-    assert "duplicate-presentation" in result.stdout
-    assert "render" in result.stdout
-    assert "inspect" in result.stdout
-    assert "repl" in result.stdout
-    assert "--client-secrets" in result.stdout
-    assert "--full-drive" in result.stdout
+    help_text = _visible(result.stdout)
+    assert "jinjify" in help_text
+    assert "imagify" in help_text
+    assert "duplicate-presentation" in help_text
+    assert "render" in help_text
+    assert "inspect" in help_text
+    assert "repl" in help_text
+    assert "--client-secrets" in help_text
+    assert "--full-drive" in help_text
 
 
 def test_oauth_flags_forwarded(tmp_path: Path, monkeypatch) -> None:
@@ -168,8 +176,9 @@ def test_subcommand_help_lists_slide_flags(tmp_path: Path, monkeypatch) -> None:
         tmp_path, "delete-slide", "--help", monkeypatch=monkeypatch, fake=_FakeClient()
     )
     assert result.exit_code == 0
-    assert "--id" in result.stdout
-    assert "--slide-number" in result.stdout
+    help_text = _visible(result.stdout)
+    assert "--id" in help_text
+    assert "--slide-number" in help_text
 
 
 def test_duplicate_presentation_command(tmp_path: Path, monkeypatch) -> None:
