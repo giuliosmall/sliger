@@ -8,7 +8,7 @@ class SligerError(Exception):
 
 
 class CredentialsError(SligerError):
-    """Raised when service-account credentials cannot be loaded."""
+    """Raised when Google API credentials cannot be loaded."""
 
 
 class GoogleAPIError(SligerError):

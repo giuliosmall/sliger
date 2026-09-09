@@ -30,6 +30,7 @@ dependencies = [
     "typer>=0.12.0",
     "google-api-python-client>=2.87.0",
     "google-auth>=2.19.0",
+    "google-auth-oauthlib>=1.2.0",
     "jinja2>=3.1.2",
     "tomli>=2.0.1; python_version < '3.11'",
 ]
@@ -37,6 +38,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/slidoapp/sliger"
 Issues = "https://github.com/slidoapp/sliger/issues"
+Changelog = "https://github.com/slidoapp/sliger/blob/main/CHANGELOG.md"
 
 [project.scripts]
 sliger = "sliger.cli:app"
@@ -75,6 +77,9 @@ known-first-party = ["sliger"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
+markers = [
+    "live: calls real Google APIs (needs SLIGER_LIVE=1 and ADC with Slides/Drive scopes)",
+]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
