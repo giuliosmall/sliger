@@ -45,14 +45,32 @@ From a checkout:
 uv sync
 ```
 
-Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/). To publish a tagged release, see [Releasing](#releasing).
 
 ## Prerequisites
 
-1. A GCP service account JSON key with the **Google Slides API** and **Google Drive API** enabled.
-2. Share the presentation with the service account email (the `client_email` field in the JSON key).
+Enable the **Google Slides API** and **Google Drive API** on a GCP project, then authenticate in one of two ways:
 
-The CLI also reads `SLIGER_CREDS_FILE`, `SLIGER_PRESENTATION_ID`, and `SLIGER_CONFIG_PATH` if you prefer not to pass those flags every time.
+**Service account** — a JSON key. Share the presentation with the `client_email` in that file.
+
+```bash
+sliger --creds-file service-account.json --presentation-id PRESENTATION_ID jinjify
+```
+
+**Your Google user (OAuth)** — a **Desktop app** OAuth client (GCP → APIs & Services → Credentials → OAuth client ID → Desktop app). A Web application client will not work: the CLI listens on a random `http://localhost` port, which only Desktop clients allow. Put the OAuth consent screen in Testing and add your Google account as a test user. The first run opens a browser; the token is cached at `~/.config/sliger/token.json`.
+
+```bash
+sliger --client-secrets client_secret.json --presentation-id PRESENTATION_ID jinjify
+```
+
+User OAuth requests the Slides scope plus `drive.file` (files this app creates). Copying an existing presentation needs broader Drive access:
+
+```bash
+sliger --client-secrets client_secret.json --full-drive \
+  --presentation-id PRESENTATION_ID duplicate-presentation --copy-title "Copy"
+```
+
+`--creds-file` also accepts client secrets or a saved token. Environment variables: `SLIGER_CREDS_FILE`, `SLIGER_CLIENT_SECRETS`, `SLIGER_TOKEN_FILE`, `SLIGER_PRESENTATION_ID`, `SLIGER_CONFIG_PATH`, `SLIGER_FULL_DRIVE`.
 
 ## Usage
 
@@ -111,6 +129,13 @@ sliger --creds-file creds.json --presentation-id PRESENTATION_ID \
   jinjify --data '{"company_name": "Slido"}'
 ```
 
+`--dry-run` prints each `original → rendered` change and does not call the Slides API.
+
+```bash
+sliger --creds-file creds.json --presentation-id PRESENTATION_ID \
+  jinjify --data '{"company_name": "Slido"}' --dry-run
+```
+
 Or `--data-file vars.json`. Custom Python functions come from a TOML config:
 
 ```toml
@@ -128,6 +153,41 @@ Each value must be a `module.function` dotted path. The directory that contains 
 ```
 {{ greet_pycon() }}
 ```
+
+Jinja on a shape is stored in that shape's alt-text (`sliger:…`), so you can **re-jinjify the same deck** when the warehouse moves. Functions may return a string, a table (`list[dict]` / `TableResult`), an image (`ImageResult` / path / bytes), or `sliger_repeat("items")` to duplicate the slide per row.
+
+Built-in `sql()` (sqlite only in core) and named connections:
+
+```toml
+[connections.db]
+type = "sqlite"
+url = "file:./metrics.db"
+
+[function_map]
+events_count = "custom_functions.events_count"
+```
+
+```
+{{ sql("select sum(n) as events from metrics where account = :account_uuid") }}
+{{ sliger_repeat("deals") }}
+{{ item.name }}
+```
+
+`sql()` and mapped functions pull missing arguments from `--data`. One bad box becomes `[sliger error: …]` and does not abort the rest of the deck.
+
+### `render` / `inspect` / `repl`
+
+```bash
+sliger --creds-file creds.json --presentation-id TEMPLATE_ID --config-path config.toml \
+  render --copy-title "Acme Q3" --data-file acme.json
+
+sliger --creds-file creds.json --presentation-id TEMPLATE_ID inspect --data-file acme.json
+
+sliger --creds-file creds.json --config-path config.toml \
+  repl "{{ sql('select 1 as n') }}"
+```
+
+`render` copies the template, expands repeaters, jinjifies, imagifies, and writes a provenance line into speaker notes.
 
 ### `imagify`
 
@@ -148,18 +208,19 @@ sliger --creds-file creds.json --presentation-id PRESENTATION_ID \
   --config-path config.toml imagify --data '{"account_uuid": "abc"}'
 ```
 
-Uploaded images are given **anyone-with-the-link reader** access because the Slides API fetches them over HTTP. Do not put secrets in those files.
+`--dry-run` lists placeholders and resolved paths without uploading.
+
+Local files are uploaded only long enough for Slides to fetch them, then deleted from Drive. During that window they are link-readable — do not put secrets in those files. HTTP(S) URLs skip Drive entirely.
 
 ## Python API
 
 ```python
 from sliger import Sliger
 
-client = Sliger("creds.json", "PRESENTATION_ID", config_path="config.toml")
-new_id = client.duplicate_presentation("Slido @ Example")
-client.presentation_id = new_id
-client.jinjify({"company_name": "Example", "account_uuid": "abc"})
-client.imagify({"account_uuid": "abc"})
+client = Sliger("creds.json", "TEMPLATE_ID", config_path="config.toml")
+report = client.inspect({"company_name": "Example"})
+result = client.render("Example Q3", {"company_name": "Example"})
+print(result.url)
 ```
 
 ## Demo
@@ -182,8 +243,50 @@ uv run pytest
 
 `uv.lock` is the source of truth for dependency versions; CI installs with `uv sync --locked`. Optional: `uv run pre-commit install` to run Ruff on each commit.
 
+## Testing against GCP
+
+`gcloud auth login` authenticates the `gcloud` CLI only. The Python client uses
+[Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
+from `gcloud auth application-default login`, and that token must include Slides
+and Drive scopes (the default ADC login does not).
+
+```bash
+gcloud auth application-default login \
+  --scopes=https://www.googleapis.com/auth/presentations,https://www.googleapis.com/auth/drive
+
+gcloud auth application-default set-quota-project YOUR_PROJECT_ID
+gcloud services enable slides.googleapis.com drive.googleapis.com --project YOUR_PROJECT_ID
+```
+
+Then, against a throwaway deck (the live test creates and deletes one). From the repo root, if `.secrets/user-token.json` exists you only need:
+
+```bash
+export GOOGLE_CLOUD_QUOTA_PROJECT=nnewtonians-questionario1-prd
+SLIGER_LIVE=1 uv run pytest -m live -s
+```
+
+Or pass an explicit token path (must be a real file, not a `...` placeholder):
+
+```bash
+export SLIGER_CREDS_FILE="$PWD/.secrets/user-token.json"
+export GOOGLE_CLOUD_QUOTA_PROJECT=nnewtonians-questionario1-prd
+SLIGER_LIVE=1 uv run pytest -m live -s
+```
+
+## Releasing
+
+1. Register this GitHub repository as a [PyPI Trusted Publisher](https://docs.pypi.org/trusted-publishers/) for project `sliger`, workflow `release.yml`, environment `pypi`.
+2. Tag a version that matches `pyproject.toml` and `CHANGELOG.md`:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The release workflow builds the wheel, runs `tests/smoke_test.py` against it, and publishes with `uv publish`.
+
 ## Security notes
 
-- Keep service-account JSON keys out of git. The `.gitignore` already ignores `*service_account*.json`.
+- Keep service-account JSON keys and OAuth client secrets out of git. The `.gitignore` already ignores `*service_account*.json`.
 - Duplicated presentations are **not** world-writable. That used to be the default and is now `--anyone-can-edit`.
-- `imagify` still has to publish uploaded images as link-readable; that is a Google Slides API constraint.
+- `imagify` still has to make a local upload briefly link-readable so Slides can fetch it; the Drive file is deleted immediately after insert.
