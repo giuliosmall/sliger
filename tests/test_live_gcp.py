@@ -387,6 +387,60 @@ def test_e2e_table_from_sql(tmp_path: Path) -> None:
 
 @pytest.mark.live
 @pytest.mark.skipif(not LIVE, reason="set SLIGER_LIVE=1 to call Google APIs")
+def test_e2e_table_from_bigquery(tmp_path: Path) -> None:
+    pytest.importorskip("google.cloud.bigquery")
+    project = (
+        os.environ.get("SLIGER_BQ_PROJECT")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("GOOGLE_CLOUD_QUOTA_PROJECT")
+    )
+    if not project:
+        pytest.skip("needs SLIGER_BQ_PROJECT or GOOGLE_CLOUD_PROJECT")
+
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f'[connections.warehouse]\ntype = "bigquery"\nproject = "{project}"\n',
+        encoding="utf-8",
+    )
+
+    client = _client(config_path=config_path)
+    created_ids: list[str] = []
+    try:
+        created = _create_presentation(client, _live_title("bq-table"))
+        presentation_id = created["presentationId"]
+        created_ids.append(presentation_id)
+        client.presentation_id = presentation_id
+        page_id = created["slides"][0]["objectId"]
+        _seed_boxes(
+            client,
+            presentation_id,
+            page_id,
+            ["{{ sql('select :left as name, 1 as n union all select :right as name, 2 as n') }}"],
+        )
+
+        applied = client.jinjify({"left": "Ada", "right": "Bob"})
+        assert applied.dry_run is False
+        assert any(change.kind == "table" for change in applied.changes)
+
+        presentation = None
+        tables: list[dict] = []
+        for _ in range(6):
+            presentation = _fetch_presentation(client)
+            tables = _table_elements(presentation)
+            if tables:
+                break
+            time.sleep(0.5)
+        assert tables, "expected a table pageElement after BigQuery sql() jinjify"
+        cells = " ".join(_table_cell_texts(tables[0]))
+        assert "Ada" in cells
+        assert "Bob" in cells
+        assert "name" in cells
+    finally:
+        _delete_presentations(client, created_ids)
+
+
+@pytest.mark.live
+@pytest.mark.skipif(not LIVE, reason="set SLIGER_LIVE=1 to call Google APIs")
 def test_e2e_inspect_and_render() -> None:
     client = _client()
     created_ids: list[str] = []

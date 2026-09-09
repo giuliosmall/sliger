@@ -201,3 +201,15 @@ def test_live_bigquery_select_one() -> None:
     result = run_sql(parsed["wh"], "select 1 as n")
     assert result.headers[0] == "n"
     assert result.rows[0][0] == "1"
+    named = run_sql(
+        parsed["wh"],
+        "select :name as name, :n as n",
+        {"name": "Ada", "n": 7},
+    )
+    assert named == TableResult(headers=("name", "n"), rows=(("Ada", "7"),))
+    public = run_sql(
+        parsed["wh"],
+        "select word from `bigquery-public-data.samples.shakespeare` where word = :word limit 1",
+        {"word": "the"},
+    )
+    assert public.rows == (("the",),)
