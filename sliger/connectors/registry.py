@@ -19,12 +19,16 @@ from sliger.results import TableResult
 BUILTIN: dict[str, str] = {
     "sqlite": "sliger.connectors.sqlite:SQLiteConnector",
     "bigquery": "sliger.connectors.bigquery:BigQueryConnector",
+    "snowflake": "sliger.connectors.snowflake:SnowflakeConnector",
+    "databricks": "sliger.connectors.databricks:DatabricksConnector",
 }
 
 # alias -> canonical kind
 ALIASES: dict[str, str] = {
     "sqlite3": "sqlite",
     "bq": "bigquery",
+    "sf": "snowflake",
+    "dbsql": "databricks",
 }
 
 _runtime: dict[str, Connector | type[Connector] | str] = {}

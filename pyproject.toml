@@ -37,10 +37,19 @@ dependencies = [
 
 [project.optional-dependencies]
 bigquery = ["google-cloud-bigquery>=3.25.0"]
+snowflake = ["snowflake-connector-python>=3.12.0"]
+databricks = ["databricks-sql-connector>=3.6.0"]
+warehouses = [
+    "google-cloud-bigquery>=3.25.0",
+    "snowflake-connector-python>=3.12.0",
+    "databricks-sql-connector>=3.6.0",
+]
 
 [project.entry-points."sliger.connectors"]
 sqlite = "sliger.connectors.sqlite:SQLiteConnector"
 bigquery = "sliger.connectors.bigquery:BigQueryConnector"
+snowflake = "sliger.connectors.snowflake:SnowflakeConnector"
+databricks = "sliger.connectors.databricks:DatabricksConnector"
 
 [project.urls]
 Homepage = "https://github.com/slidoapp/sliger"

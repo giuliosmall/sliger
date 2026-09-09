@@ -15,7 +15,7 @@ from sliger.connectors import (
     reset_registry,
     run_sql,
 )
-from sliger.connectors.base import named_placeholders, rewrite_placeholders
+from sliger.connectors.base import first_text, named_placeholders, rewrite_placeholders
 from sliger.exceptions import ConfigError
 from sliger.results import TableResult
 
@@ -41,6 +41,9 @@ class _FakeConnector(Connector):
 
 def test_known_types_include_sqlite() -> None:
     assert "sqlite" in known_types()
+    assert "bigquery" in known_types()
+    assert "snowflake" in known_types()
+    assert "databricks" in known_types()
 
 
 def test_get_sqlite_alias() -> None:
@@ -69,6 +72,11 @@ def test_infer_kind_from_url_scheme() -> None:
 
 def test_named_placeholders_skip_cast() -> None:
     assert named_placeholders("select :id::int as n, :name") == ("id", "name")
+
+
+def test_first_text() -> None:
+    assert first_text("", None, "ada", "bob") == "ada"
+    assert first_text(None, 1, "") == ""
 
 
 def test_rewrite_placeholders() -> None:

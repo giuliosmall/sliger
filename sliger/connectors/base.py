@@ -53,6 +53,14 @@ class Connector(ABC):
         """Run ``query`` with sliger ``:named`` parameters."""
 
 
+def first_text(*values: Any) -> str:
+    """Return the first non-empty string among ``values``."""
+    for value in values:
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
 def resolve_secret(value: str) -> str:
     """Resolve ``env:NAME`` to an environment variable; pass other strings through."""
     if value.startswith("env:"):
