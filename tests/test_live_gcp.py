@@ -441,6 +441,70 @@ def test_e2e_table_from_bigquery(tmp_path: Path) -> None:
 
 @pytest.mark.live
 @pytest.mark.skipif(not LIVE, reason="set SLIGER_LIVE=1 to call Google APIs")
+def test_e2e_table_from_snowflake(tmp_path: Path) -> None:
+    pytest.importorskip("snowflake.connector")
+    account = os.environ.get("SNOWFLAKE_ACCOUNT")
+    user = os.environ.get("SNOWFLAKE_USER")
+    password = os.environ.get("SNOWFLAKE_PASSWORD")
+    token = os.environ.get("SNOWFLAKE_TOKEN")
+    if not account or not user or not (password or token):
+        pytest.skip("needs SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, and password or token")
+
+    lines = [
+        "[connections.warehouse]",
+        'type = "snowflake"',
+        f'account = "{account}"',
+        f'user = "{user}"',
+    ]
+    if token:
+        lines.append('token = "env:SNOWFLAKE_TOKEN"')
+    if password:
+        lines.append('password = "env:SNOWFLAKE_PASSWORD"')
+    for key, env in (
+        ("warehouse", "SNOWFLAKE_WAREHOUSE"),
+        ("database", "SNOWFLAKE_DATABASE"),
+        ("schema", "SNOWFLAKE_SCHEMA"),
+        ("role", "SNOWFLAKE_ROLE"),
+    ):
+        value = os.environ.get(env)
+        if value:
+            lines.append(f'{key} = "{value}"')
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    client = _client(config_path=config_path)
+    created_ids: list[str] = []
+    try:
+        created = _create_presentation(client, _live_title("sf-table"))
+        presentation_id = created["presentationId"]
+        created_ids.append(presentation_id)
+        client.presentation_id = presentation_id
+        page_id = created["slides"][0]["objectId"]
+        _seed_boxes(
+            client,
+            presentation_id,
+            page_id,
+            ["{{ sql('select :left as name, 1 as n union all select :right as name, 2 as n') }}"],
+        )
+        applied = client.jinjify({"left": "Ada", "right": "Bob"})
+        assert applied.dry_run is False
+        assert any(change.kind == "table" for change in applied.changes)
+        tables: list[dict] = []
+        for _ in range(6):
+            tables = _table_elements(_fetch_presentation(client))
+            if tables:
+                break
+            time.sleep(0.5)
+        assert tables, "expected a table pageElement after Snowflake sql() jinjify"
+        cells = " ".join(_table_cell_texts(tables[0]))
+        assert "Ada" in cells
+        assert "Bob" in cells
+    finally:
+        _delete_presentations(client, created_ids)
+
+
+@pytest.mark.live
+@pytest.mark.skipif(not LIVE, reason="set SLIGER_LIVE=1 to call Google APIs")
 def test_e2e_inspect_and_render() -> None:
     client = _client()
     created_ids: list[str] = []
