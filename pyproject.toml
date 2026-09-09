@@ -35,6 +35,13 @@ dependencies = [
     "tomli>=2.0.1; python_version < '3.11'",
 ]
 
+[project.optional-dependencies]
+bigquery = ["google-cloud-bigquery>=3.25.0"]
+
+[project.entry-points."sliger.connectors"]
+sqlite = "sliger.connectors.sqlite:SQLiteConnector"
+bigquery = "sliger.connectors.bigquery:BigQueryConnector"
+
 [project.urls]
 Homepage = "https://github.com/slidoapp/sliger"
 Issues = "https://github.com/slidoapp/sliger/issues"

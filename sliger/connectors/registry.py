@@ -18,11 +18,13 @@ from sliger.results import TableResult
 # kind -> "module:Class". Add one line here when you add a warehouse.
 BUILTIN: dict[str, str] = {
     "sqlite": "sliger.connectors.sqlite:SQLiteConnector",
+    "bigquery": "sliger.connectors.bigquery:BigQueryConnector",
 }
 
 # alias -> canonical kind
 ALIASES: dict[str, str] = {
     "sqlite3": "sqlite",
+    "bq": "bigquery",
 }
 
 _runtime: dict[str, Connector | type[Connector] | str] = {}
