@@ -8,7 +8,7 @@ on:
     branches: [main]
 
 jobs:
-  warehouses:
+  bigquery:
     if: github.event_name == 'workflow_dispatch' || vars.LIVE_WAREHOUSES == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -18,8 +18,8 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
-      - name: Install warehouse extras
-        run: uv sync --locked --extra bigquery --extra snowflake
+      - name: Install BigQuery extra
+        run: uv sync --locked --extra bigquery
       - name: Google credentials
         env:
           GCP_SA_JSON: ${{ secrets.GCP_SA_JSON }}
@@ -28,12 +28,29 @@ jobs:
             printf '%s' "$GCP_SA_JSON" > "$RUNNER_TEMP/gcp-sa.json"
             echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-sa.json" >> "$GITHUB_ENV"
           fi
-      - name: Live BigQuery and Snowflake
+      - name: Live BigQuery
         env:
           SLIGER_LIVE: "1"
           GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
           GOOGLE_CLOUD_QUOTA_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
           SLIGER_BQ_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+        run: uv run pytest tests/test_bigquery.py -m live --tb=short
+
+  snowflake:
+    if: github.event_name == 'workflow_dispatch' || vars.LIVE_WAREHOUSES == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install Snowflake extra
+        run: uv sync --locked --extra snowflake
+      - name: Live Snowflake
+        env:
+          SLIGER_LIVE: "1"
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_TOKEN: ${{ secrets.SNOWFLAKE_TOKEN }}
@@ -42,4 +59,4 @@ jobs:
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
           SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
-        run: uv run pytest tests/test_bigquery.py tests/test_snowflake.py -m live --tb=short
+        run: uv run pytest tests/test_snowflake.py -m live --tb=short

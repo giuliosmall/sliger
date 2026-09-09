@@ -542,8 +542,11 @@ def test_live_snowflake_missing_param(sf_live: Connection) -> None:
 
 
 def test_live_snowflake_bad_sql(sf_live: Connection) -> None:
-    with pytest.raises(ConfigError, match="Snowflake failed"):
+    with pytest.raises(ConfigError, match="Snowflake failed") as caught:
         run_sql(sf_live, "selct broken")
+    message = str(caught.value)
+    assert "not allowed to access" not in message
+    assert "390422" not in message
 
 
 def test_live_snowflake_jinja_sql(sf_live: Connection) -> None:
