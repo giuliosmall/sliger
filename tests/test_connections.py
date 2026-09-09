@@ -83,9 +83,9 @@ def test_run_sql_missing_params() -> None:
         run_sql(connection, "SELECT :n AS n")
 
 
-def test_run_sql_unsupported_type() -> None:
+def test_run_sql_unknown_type() -> None:
     connection = Connection(name="pg", kind="postgres", url="postgres://localhost/db")
-    with pytest.raises(ConfigError, match="only sqlite is built in"):
+    with pytest.raises(ConfigError, match="Unknown connection type 'postgres'"):
         run_sql(connection, "SELECT 1")
 
 
